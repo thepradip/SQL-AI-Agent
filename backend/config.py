@@ -24,11 +24,16 @@ class Settings(BaseSettings):
     # Optional: domain hint injected into the system prompt (e.g., "This is a health analytics database.")
     domain_hint: str = ""
 
+    # Standalone visualization service
+    visualization_service_enabled: bool = True
+    visualization_service_url: str = "http://127.0.0.1:8011"
+    visualization_service_timeout_seconds: float = 2.0
+
     # CORS
     frontend_url: str = "http://localhost:5173"
 
     class Config:
-        env_file = "../.env"
+        env_file = ("../.env", ".env")
         env_file_encoding = "utf-8"
         extra = "ignore"
 

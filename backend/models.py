@@ -63,6 +63,9 @@ class QueryVisualization(BaseModel):
     number_value: int | float | str | None = None
     number_label: str | None = None
     number_context: str | None = None
+    confidence: float | None = None
+    source: str | None = None
+    warnings: list[str] | None = None
 
 
 class QueryResponse(BaseModel):
@@ -96,6 +99,8 @@ class HealthCheck(BaseModel):
     database: str
     tables: list[str]
     mlflow_experiment: str
+    visualization_service_url: str | None = None
+    visualization_service_enabled: bool | None = None
 
 
 class SchemaResponse(BaseModel):

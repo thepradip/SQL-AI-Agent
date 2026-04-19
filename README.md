@@ -11,7 +11,7 @@
 
 <h1 align="center">SQL AI Agent</h1>
 
-**SQL AI Agent** transforms natural language into production-safe SQL, executes it against any database, and returns narrated insights. A 7-node LangGraph pipeline with SQLAS quality gates scores every response across 20 metrics, blocks unsafe operations, and self-heals broken SQL. Zero config — point at any database and ask.
+**SQL AI Agent** transforms natural language into production-safe SQL, executes it against any database, and returns narrated insights. The FastAPI backend uses schema introspection, read-only SQL enforcement, MLflow tracing, and SQLAS evaluation hooks. Visualization is handled by a separate FastAPI feature service so chart inference can be versioned, tested, and deployed independently.
 
 **Author:** [Pradip Tivhale](https://github.com/thepradip)
 
@@ -26,7 +26,8 @@
 | Layer | Components | Responsibility |
 |-------|-----------|----------------|
 | **Frontend** | Chat UI, SQL Viewer, Data Tables, Metrics Panel | React + Vite + Tailwind CSS |
-| **Backend & API** | FastAPI, Schema Introspection, LangGraph Agent | REST API, 7-node pipeline with SQLAS gates |
+| **Backend & API** | FastAPI, Schema Introspection, Azure OpenAI Agent | REST API, traced SQL generation/execution/narration |
+| **Visualization Service** | FastAPI chart inference API | Isolated `/v1/visualizations/*` service for number/bar/line/pie/table specs |
 | **Evaluation** | SQLAS safety gate + post-response scoring | 20 metrics, read-only enforcement, quality scores |
 | **Infrastructure** | Azure OpenAI, SQLite/PostgreSQL/MySQL | LLM reasoning, any SQL database |
 
@@ -37,35 +38,27 @@
 ```
 backend/
 ├── main.py                    FastAPI application
-│   ├── POST /query            NL → LangGraph pipeline → response + SQLAS scores
+│   ├── POST /query            NL → SQL → execute → narrate → visualize
 │   ├── GET  /health           DB connection status + table list
 │   ├── GET  /schema           Full auto-discovered schema context
 │   ├── POST /evaluate         Run 25-case SQLAS evaluation suite
 │   └── DELETE /conversations  Clear conversation history
 │
-├── agent/                     LangGraph agent package
-│   ├── __init__.py            Exports: build_graph, run_query
-│   ├── state.py               AgentState TypedDict (14 fields)
-│   ├── nodes.py               7 node functions + SQLAS integration
-│   │   ├── retrieve_schema    Inject cached DB context
-│   │   ├── generate_sql       LLM generates SQL (or retry with error)
-│   │   ├── validate_sql       SQLAS safety gate (3 checks)
-│   │   ├── execute_sql        Read-only query via SQLAlchemy
-│   │   ├── handle_error       Increment retry counter
-│   │   ├── narrate_result     LLM summarizes results in NL
-│   │   ├── evaluate_quality   SQLAS 20-metric scoring
-│   │   ├── reject_unsafe      Terminal: safety rejection
-│   │   └── fail_after_retries Terminal: max retries exceeded
-│   └── graph.py               StateGraph definition + conditional edges
-│       ├── route_after_validation   safe → execute | unsafe → reject
-│       ├── route_after_execution    success → narrate | failure → retry
-│       └── route_after_error        retry < max → generate | else → fail
+├── agent.py                   Azure OpenAI SQL agent
+│   ├── init_agent()           Cache auto-discovered schema context
+│   ├── _generate_sql()        Generate read-only SQL
+│   ├── _narrate_result()      Return brief factual commentary
+│   ├── _retry_generate_sql()  Repair SQL after execution errors
+│   └── run_query()            Traced pipeline entrypoint
+│
+├── tracing.py                 MLflow spans and pipeline metrics
+├── visualization_client.py    Thin HTTP client for the visualization service
 │
 ├── config.py                  Pydantic Settings from .env
 │   ├── AZURE_OPENAI_*         LLM configuration
 │   ├── DATABASE_URL           Any SQLAlchemy async URL
-│   ├── PII_COLUMNS            For SQLAS safety scoring
-│   └── DOMAIN_HINT            Optional context for LLM
+│   ├── DOMAIN_HINT            Optional context for LLM
+│   └── VISUALIZATION_*        Separate visualization service settings
 │
 ├── database.py                Database layer (any SQL DB)
 │   ├── get_full_schema()      Introspect: tables, columns, PKs, FKs, indexes
@@ -88,12 +81,31 @@ backend/
 │   └── physical_activity      multi-day activity logs, FK to demographics
 │
 └── requirements.txt           Dependencies
-    ├── langgraph >= 0.2.0     Agent orchestration
     ├── sqlas >= 1.1.0         Evaluation framework (pip install sqlas)
     ├── fastapi                REST API
+    ├── httpx                  Visualization service client
     ├── sqlalchemy + aiosqlite Async database
     └── openai                 Azure OpenAI LLM
 ```
+
+### Visualization Service
+
+New UI features run as separate FastAPI services. SQL chart inference is isolated from the main SQL agent backend:
+
+```text
+services/visualization_service/
+├── app.py                     FastAPI app
+│   ├── GET  /health
+│   ├── GET  /meta
+│   ├── POST /v1/visualizations/infer
+│   ├── POST /v1/visualizations/validate
+│   └── POST /v1/visualizations/render-spec
+├── inference.py               Deterministic chart selection
+├── validation.py              Renderability and data-alignment checks
+└── schemas.py                 Versioned Pydantic API contracts
+```
+
+The main backend calls this service through `backend/visualization_client.py` with a short timeout. If the visualization service is unavailable, the SQL answer still returns successfully without a chart.
 
 ---
 
@@ -194,7 +206,16 @@ uvicorn main:app --reload
 FastAPI server: `http://localhost:8000`
 API docs: `http://localhost:8000/docs`
 
-### 3. Frontend
+### 3. Visualization Service
+
+```bash
+python -m uvicorn services.visualization_service.app:app --host 127.0.0.1 --port 8011
+```
+
+Visualization API: `http://localhost:8011`
+Visualization docs: `http://localhost:8011/docs`
+
+### 4. Frontend
 
 ```bash
 cd frontend
@@ -215,6 +236,16 @@ React app: `http://localhost:5173`
 | POST | `/query` | NL -> SQL -> Execute -> Narrate (with SQLAS scores) |
 | POST | `/evaluate` | Run SQLAS evaluation suite (25 test cases) |
 | DELETE | `/conversations/{id}` | Clear conversation history |
+
+### Visualization Service Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Service health |
+| GET | `/meta` | Service metadata and endpoint list |
+| POST | `/v1/visualizations/infer` | Infer chart spec from SQL result |
+| POST | `/v1/visualizations/validate` | Validate chart spec against SQL result |
+| POST | `/v1/visualizations/render-spec` | Return the render-ready chart spec |
 
 ### Query Response
 

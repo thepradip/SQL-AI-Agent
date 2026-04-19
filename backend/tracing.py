@@ -13,7 +13,7 @@ import mlflow
 from mlflow.entities import SpanType, AssessmentSource, AssessmentSourceType
 
 from config import get_settings
-from visualization import build_visualization
+from visualization_client import infer_visualization
 
 settings = get_settings()
 
@@ -193,6 +193,18 @@ async def traced_run_query(
                 "response_length": len(response_text),
             })
 
+        # ── Step 4: Visualization service ──────────────────────────────────
+        with mlflow.start_span("infer_visualization", span_type=SpanType.TOOL) as viz_span:
+            viz_start = time.perf_counter()
+            visualization = await infer_visualization(user_query, query_result, response_text)
+            viz_latency_ms = (time.perf_counter() - viz_start) * 1000
+            viz_span.set_inputs({"row_count": query_result["row_count"], "columns": query_result["columns"]})
+            viz_span.set_outputs({
+                "visualization_type": visualization.get("type") if visualization else None,
+                "available": visualization is not None,
+            })
+            viz_span.set_attributes({"visualization_latency_ms": round(viz_latency_ms, 2)})
+
         # ── Pipeline summary ────────────────────────────────────────────────
         total_latency_ms = (time.perf_counter() - pipeline_start) * 1000
 
@@ -208,6 +220,7 @@ async def traced_run_query(
             "pipeline.generation_latency_ms": round(gen_latency_ms, 2),
             "pipeline.sql_execution_ms": query_result["execution_time_ms"],
             "pipeline.narration_latency_ms": round(narr_latency_ms, 2),
+            "pipeline.visualization_latency_ms": round(viz_latency_ms, 2),
             "pipeline.retry_count": retry_count,
             "pipeline.result_rows": query_result["row_count"],
             "pipeline.query_type": sql_metrics["query_type"],
@@ -243,7 +256,7 @@ async def traced_run_query(
         "success": True,
         "trace_id": trace_id,
         "metrics": metrics,
-        "visualization": build_visualization(user_query, query_result),
+        "visualization": visualization,
     }
 
 

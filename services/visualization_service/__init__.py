@@ -1,0 +1,1 @@
+"""SQL result visualization service."""

@@ -62,6 +62,8 @@ async def health_check():
         database=settings.database_url.split("///")[-1],
         tables=tables,
         mlflow_experiment=EXPERIMENT_NAME,
+        visualization_service_url=settings.visualization_service_url,
+        visualization_service_enabled=settings.visualization_service_enabled,
     )
 
 
