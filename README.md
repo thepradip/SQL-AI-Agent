@@ -17,6 +17,26 @@
 
 ---
 
+## Demo
+
+### Trailer
+
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/ac3a4220-288c-4f6b-a982-ba9e05d713a8" controls width="100%"></video>
+</p>
+
+### Full Demo
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=c5lHsIUL8rM" target="_blank">
+    <img src="https://img.youtube.com/vi/c5lHsIUL8rM/maxresdefault.jpg" alt="SQL AI Agent Full Demo" width="100%"/>
+  </a>
+</p>
+
+> Click the thumbnail above to watch the full demo on YouTube.
+
+---
+
 ## System Architecture
 
 <p align="center">
